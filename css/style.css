@@ -161,6 +161,15 @@ body {
   cursor: pointer;
 }
 
+/* ===== ESTADO VAZIO ===== */
+.empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 2rem;
+  color: #6b7280;
+  font-size: 0.9rem;
+}
+
 /* ===== RESPONSIVO ===== */
 @media (max-width: 600px) {
   .header { padding: 0 1rem; }
