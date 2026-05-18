@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>ReceitaHub</title>
   <link rel="stylesheet" href="css/style.css"/>
@@ -11,28 +11,299 @@
   <!-- HEADER -->
   <header class="header">
     <span class="logo">ReceitaHub</span>
-    <button class="btn-add">+ Add</button>
+    <button class="btn-add" onclick="abrirModal()">+ Nova Receita</button>
   </header>
 
   <main class="container">
 
-    <!-- FILTROS -->
-    <div class="filtros">
-      <button class="filtro active">Todos</button>
-      <button class="filtro">Frango</button>
-      <button class="filtro">Massas</button>
-      <button class="filtro">Saladas</button>
-      <button class="filtro">Carnes</button>
-    </div>
+    <!-- BUSCA API -->
+    <section class="api-section">
+      <h2 class="section-title">Buscar Receitas <span class="badge">TheMealDB</span></h2>
+      <div class="busca-row">
+        <input type="text" id="campoBusca" placeholder="Ex: chicken, pasta, beef..."/>
+        <button class="btn-buscar" onclick="buscarAPI()">Buscar</button>
+      </div>
+      <div class="cards-grid" id="listaApi">
+        <p class="empty">Digite um ingrediente ou nome para buscar.</p>
+      </div>
+    </section>
 
-    <!-- MINHAS RECEITAS -->
+    <!-- FILTROS MINHAS RECEITAS -->
     <section>
-      <h2 class="section-title">Minhas Receitas</h2>
-      <div class="cards-grid" id="cardsGrid"></div>
+      <h2 class="section-title">Minhas Receitas <span class="badge firebase">Firebase</span></h2>
+      <div class="filtros">
+        <button class="filtro active" onclick="filtrar('Todos', this)">Todos</button>
+        <button class="filtro" onclick="filtrar('Frango', this)">Frango</button>
+        <button class="filtro" onclick="filtrar('Massas', this)">Massas</button>
+        <button class="filtro" onclick="filtrar('Saladas', this)">Saladas</button>
+        <button class="filtro" onclick="filtrar('Carnes', this)">Carnes</button>
+        <button class="filtro" onclick="filtrar('Outros', this)">Outros</button>
+      </div>
+      <div class="cards-grid" id="listaLocal">
+        <p class="empty">Carregando receitas...</p>
+      </div>
     </section>
 
   </main>
 
-  <script src="js/main.js"></script>
+  <!-- MODAL ADICIONAR/EDITAR -->
+  <div class="modal-overlay" id="modalOverlay" onclick="fecharModal()"></div>
+  <div class="modal" id="modal">
+    <div class="modal-header">
+      <h3 id="modalTitulo">Nova Receita</h3>
+      <button class="modal-close" onclick="fecharModal()">✕</button>
+    </div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Nome *</label>
+        <input type="text" id="fNome" placeholder="Ex: Frango Grelhado"/>
+      </div>
+      <div class="form-group">
+        <label>Categoria *</label>
+        <select id="fCategoria">
+          <option value="">Selecione...</option>
+          <option value="Frango">Frango</option>
+          <option value="Massas">Massas</option>
+          <option value="Saladas">Saladas</option>
+          <option value="Carnes">Carnes</option>
+          <option value="Outros">Outros</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Tempo</label>
+        <input type="text" id="fTempo" placeholder="Ex: 30 min"/>
+      </div>
+      <div class="form-group">
+        <label>Porções</label>
+        <input type="number" id="fPorcoes" placeholder="Ex: 4"/>
+      </div>
+      <div class="form-group full">
+        <label>Ingredientes *</label>
+        <input type="text" id="fIngredientes" placeholder="Ex: frango, alho, azeite"/>
+      </div>
+      <div class="form-group full">
+        <label>Modo de Preparo</label>
+        <textarea id="fPreparo" placeholder="Passo a passo..."></textarea>
+      </div>
+      <div class="form-group full">
+        <label>URL da Imagem</label>
+        <input type="text" id="fImagem" placeholder="https://..."/>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn-salvar" onclick="salvar()">Salvar</button>
+      <button class="btn-cancelar" onclick="fecharModal()">Cancelar</button>
+    </div>
+    <input type="hidden" id="editId"/>
+  </div>
+
+  <!-- Firebase SDK -->
+  <script type="module">
+    import { initializeApp }              from "https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js";
+    import { getFirestore, collection, addDoc, getDocs,
+             updateDoc, deleteDoc, doc }  from "https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js";
+
+    // ════════════════════════════════════════
+    // 🔥 SUBSTITUA PELO SEU firebaseConfig
+    // ════════════════════════════════════════
+    const firebaseConfig = {
+      apiKey:            "AIzaSyBzXWxf-SnSIMTcvE-1o--9f_jlFPh0VlM",
+      authDomain:        "receitahub-4b4b4.firebaseapp.com",
+      projectId:         "receitahub-4b4b4",
+      storageBucket:     "receitahub-4b4b4.firebasestorage.app",
+      messagingSenderId: "523610226602",
+      appId:             "1:523610226602:web:afeb89368740e84b4135d3"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db  = getFirestore(app);
+    const COL = "receitas";
+
+    let filtroAtivo  = "Todos";
+    let todasReceitas = [];
+
+    // ── CARREGAR ──────────────────────────────
+    async function carregar() {
+      const snap = await getDocs(collection(db, COL));
+      todasReceitas = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderLocal();
+    }
+
+    // ── RENDER LOCAIS ─────────────────────────
+    window.renderLocal = function() {
+      const lista = filtroAtivo === "Todos"
+        ? todasReceitas
+        : todasReceitas.filter(r => r.categoria === filtroAtivo);
+
+      const el = document.getElementById("listaLocal");
+
+      if (lista.length === 0) {
+        el.innerHTML = '<p class="empty">Nenhuma receita encontrada.</p>';
+        return;
+      }
+
+      el.innerHTML = lista.map(r => `
+        <div class="card">
+          <div class="card-img">
+            ${r.imagem ? `<img src="${r.imagem}" alt="${r.nome}" onerror="this.parentElement.innerHTML='🍽️'"/>` : '🍽️'}
+          </div>
+          <div class="card-body">
+            <p class="card-categoria">${r.categoria}</p>
+            <h3 class="card-nome">${r.nome}</h3>
+            <p class="card-info">
+              ${r.tempo   ? `⏱ ${r.tempo}`   : ''}
+              ${r.porcoes ? `&nbsp;👥 ${r.porcoes}` : ''}
+            </p>
+            <div class="card-actions">
+              <button class="btn-editar"  onclick="abrirEdicao('${r.id}')">Editar</button>
+              <button class="btn-deletar" onclick="deletar('${r.id}')">Deletar</button>
+            </div>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    // ── FILTRAR ───────────────────────────────
+    window.filtrar = function(cat, btn) {
+      filtroAtivo = cat;
+      document.querySelectorAll(".filtro").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      renderLocal();
+    }
+
+    // ── SALVAR (CREATE / UPDATE) ──────────────
+    window.salvar = async function() {
+      const id          = document.getElementById("editId").value;
+      const nome        = document.getElementById("fNome").value.trim();
+      const categoria   = document.getElementById("fCategoria").value;
+      const tempo       = document.getElementById("fTempo").value.trim();
+      const porcoes     = document.getElementById("fPorcoes").value.trim();
+      const ingredientes= document.getElementById("fIngredientes").value.trim();
+      const preparo     = document.getElementById("fPreparo").value.trim();
+      const imagem      = document.getElementById("fImagem").value.trim();
+
+      if (!nome || !categoria || !ingredientes) {
+        toast("Preencha nome, categoria e ingredientes.");
+        return;
+      }
+
+      const dados = { nome, categoria, tempo, porcoes, ingredientes, preparo, imagem };
+
+      if (id) {
+        await updateDoc(doc(db, COL, id), dados);
+        toast("Receita atualizada!");
+      } else {
+        await addDoc(collection(db, COL), dados);
+        toast("Receita salva!");
+      }
+
+      fecharModal();
+      carregar();
+    }
+
+    // ── DELETAR ───────────────────────────────
+    window.deletar = async function(id) {
+      if (!confirm("Deletar esta receita?")) return;
+      await deleteDoc(doc(db, COL, id));
+      toast("Receita removida.");
+      carregar();
+    }
+
+    // ── EDITAR ────────────────────────────────
+    window.abrirEdicao = function(id) {
+      const r = todasReceitas.find(x => x.id === id);
+      if (!r) return;
+      document.getElementById("modalTitulo").textContent  = "Editar Receita";
+      document.getElementById("editId").value              = r.id;
+      document.getElementById("fNome").value               = r.nome;
+      document.getElementById("fCategoria").value          = r.categoria;
+      document.getElementById("fTempo").value              = r.tempo || "";
+      document.getElementById("fPorcoes").value            = r.porcoes || "";
+      document.getElementById("fIngredientes").value       = r.ingredientes;
+      document.getElementById("fPreparo").value            = r.preparo || "";
+      document.getElementById("fImagem").value             = r.imagem || "";
+      abrirModal();
+    }
+
+    carregar();
+  </script>
+
+  <!-- API TheMealDB -->
+  <script>
+    async function buscarAPI() {
+      const termo = document.getElementById("campoBusca").value.trim();
+      if (!termo) return;
+
+      const el = document.getElementById("listaApi");
+      el.innerHTML = '<p class="empty">Buscando...</p>';
+
+      try {
+        const res  = await fetch(`https://www.themealdb.com/api/json/v1/1/search.php?s=${termo}`);
+        const data = await res.json();
+
+        if (!data.meals) {
+          el.innerHTML = '<p class="empty">Nenhuma receita encontrada.</p>';
+          return;
+        }
+
+        el.innerHTML = data.meals.slice(0, 6).map(m => `
+          <div class="card">
+            <div class="card-img">
+              <img src="${m.strMealThumb}" alt="${m.strMeal}" loading="lazy"/>
+            </div>
+            <div class="card-body">
+              <p class="card-categoria">${m.strCategory} · ${m.strArea}</p>
+              <h3 class="card-nome">${m.strMeal}</h3>
+              <div class="card-actions">
+                <a href="${m.strSource || m.strYoutube || '#'}" target="_blank" class="btn-editar"
+                   style="text-decoration:none;">Ver receita</a>
+              </div>
+            </div>
+          </div>
+        `).join("");
+
+      } catch(e) {
+        el.innerHTML = '<p class="empty">Erro ao buscar. Verifique sua conexão.</p>';
+      }
+    }
+
+    // Enter na busca
+    document.getElementById("campoBusca")
+      .addEventListener("keydown", e => { if (e.key === "Enter") buscarAPI(); });
+
+    // Modal
+    function abrirModal() {
+      document.getElementById("modal").classList.add("open");
+      document.getElementById("modalOverlay").classList.add("open");
+    }
+
+    window.abrirModal = abrirModal;
+
+    function fecharModal() {
+      document.getElementById("modal").classList.remove("open");
+      document.getElementById("modalOverlay").classList.remove("open");
+      document.getElementById("editId").value = "";
+      document.getElementById("modalTitulo").textContent = "Nova Receita";
+      ["fNome","fCategoria","fTempo","fPorcoes","fIngredientes","fPreparo","fImagem"]
+        .forEach(id => document.getElementById(id).value = "");
+    }
+
+    window.fecharModal = fecharModal;
+
+    function toast(msg) {
+      let t = document.getElementById("toast");
+      if (!t) {
+        t = document.createElement("div");
+        t.id = "toast";
+        document.body.appendChild(t);
+      }
+      t.textContent = msg;
+      t.classList.add("show");
+      setTimeout(() => t.classList.remove("show"), 2800);
+    }
+
+    window.toast = toast;
+  </script>
+
 </body>
 </html>
